@@ -1,25 +1,220 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Exploring Data from a Personal Activity Monitoring Device"
+author: "Oliver Morris"
+date: "4th of November 2015"
+output: html_document
 ---
 
+#Reproducible Research - Assignment 1
 
-## Loading and preprocessing the data
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+##Loading and Preprocessing the data
+
+The below code downloads the data, unzips it and then reads it into a data frame, "repdat".
+
+```{r chunk1, echo=TRUE}
+#Set your own working directory
+#setwd("C:/Users/Oliver/Documents/0_OM/Training/R/R_ReproducibleResearch/Project1")
+
+#Download and unzip data
+url<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+download.file(url, destfile="./repdata-data-activity.zip")
+unzip("./repdata-data-activity.zip")
+
+#Read data
+repdat<- read.csv("activity.csv", header=T, na.strings = "NA")
+```
+
+##What is the mean total number of steps taken per day?
+
+First the data is prepared by grouping the data by date, using the dplyr package, which allows concise code. Then, the summarise function of the dplyr package is used to calculate the total number of steps taken per day, ignoring NA values. Finally, a histogram of the total number of steps taken each day is produced.
+
+```{r chunk2, echo=TRUE, message=FALSE, results='asis'}
+#Prepare data
+library(dplyr)
+library(xtable)
+repdat_bydate<-group_by(repdat, date)
+steps_sum<-summarise(repdat_bydate, totalsteps=sum(steps, na.rm = TRUE))
+```
+
+**Table of Total Steps Per Day**
+```{r table1, echo=TRUE, results='asis'}
+#Display results as HTML table
+print(xtable(steps_sum), "html")
+```
 
 
+**Histogram of Total Steps Per Day**
+```{r plot1, echo=TRUE, results='asis'}
+#Plot histogram
+hist(steps_sum$totalsteps, 
+     xlab="Total Steps per Day", 
+     ylab="Frequency (days)", 
+     main="Histogram of Steps per Day"
+     )
+```
 
-## What is mean total number of steps taken per day?
+###Calculate and report the mean and median of the total number of steps taken per day
+
+Again using the data grouped by date, the summarise function is used to calculate means and medians. This is then presented in one table using the xtable package.
+
+```{r chunk3, echo=TRUE, message=FALSE, results='asis'}
+#Mean Steps Per Day
+means<-summarise(repdat_bydate, means=mean(steps, na.rm = TRUE))
+
+#Meadian Steps Per Day
+medians<-summarise(repdat_bydate, medians=median(steps, na.rm = TRUE))
+
+##Merge into one table
+tableofresults1<-cbind(means, medians=medians$medians)
+```
 
 
+**Table of Mean & Median Steps per Day**
+```{r table2, echo=TRUE, message=FALSE, results='asis'}
+#Display results as HTML table
+print(xtable(tableofresults1), "html")
+```
 
-## What is the average daily activity pattern?
+##What is the average daily activity pattern?
+
+For this analysis the data is grouped by interval and then summarised to realise mean step counts per interval, regardless of day.
+
+```{r chunk4, echo=TRUE}
+#Prepare data
+repdat_byintval<-group_by(repdat, interval)
+repdat_byintval_ms<-summarise(repdat_byintval, meansteps=mean(steps, na.rm = TRUE))
+```
+
+A time series plot is created using the below code. This results in a plot of the interval (x-axis) vs the average number of steps taken, averaged across all days (y-axis)
+
+```{r plot2, echo=TRUE}
+#Create plot object
+plot(repdat_byintval_ms$interval, 
+     repdat_byintval_ms$meansteps, 
+     xlab = "Time Interval",
+     ylab = "Average number of steps (over all days)",
+     type = "n"
+     )
+
+#Add lines
+lines(repdat_byintval_ms$interval, 
+      repdat_byintval_ms$meansteps, 
+      type="l") 
+```
+
+###Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+A single line calculation can be used to find the maximum number of steps per interval, regardless of day.
+
+```{r table3, echo=TRUE, results='asis'}
+tableofresults2 <- repdat_byintval_ms[repdat_byintval_ms$meansteps==max(repdat_byintval_ms$meansteps),]
+print(xtable(tableofresults2), "html")
+```
+
+##Imputing missing values
+
+There are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+The below single line of code calculates and lists the total number of missing values in the dataset (i.e. the total number of rows with NAs).
+
+```{r chunk5, echo=TRUE}
+sum(!complete.cases(repdat))
+```
+
+###Method to Fill in Missing Values 
+
+Missing values are imputed using the mean for each 5-minute interval, as calculated above in `repdat_byintval_ms`. Then, the sqldf package is used to issue a single SQL command which creates a new dataset `repdat_imputed`, that is equal to the original dataset but with the missing data filled in.
+
+```{r chunk6, echo=TRUE, message=FALSE}
+#Issue SQL command
+library(sqldf)
+repdat_imputed<-sqldf('
+                  SELECT 
+                    CASE WHEN repdat.steps IS NULL 
+                         THEN repdat_byintval_ms.meansteps
+                         ELSE repdat.steps
+                         END AS steps,  
+                    repdat.date, 
+                    repdat.interval
+                  FROM 
+                    repdat
+                    LEFT OUTER JOIN
+                    repdat_byintval_ms
+                    ON repdat.interval = repdat_byintval_ms.interval
+                ')
+```
+
+###Histogram of Steps Vs Days
+the below code chunk presents a histogram of the total number of steps taken each day. It then calculates and lists the mean and median total number of steps taken per day. 
+
+Note, this chart is substantially different to the values plotted in the histogram for the first part of the assignment. 
+
+```{r chunk7, echo=TRUE}
+#Prepare data
+repdat_bydate_imputed<-group_by(repdat_imputed, date)
+steps_sum_imputed<-summarise(repdat_bydate_imputed, totalsteps=sum(steps))
+```
 
 
+**Histogram of Total Steps Per Day, Using Imputed Data **
+```{r plot3, echo=TRUE}
+#Present histogram
+hist(steps_sum_imputed$totalsteps, 
+     xlab="Total Steps per Day", 
+     ylab="Frequency (days)", 
+     main="Histogram of Steps per Day"
+     )
+```
 
-## Imputing missing values
+The impact of imputing the missing data is that any days with all steps = NA is now imputed to have 10,641 steps. This figure is the sum of the average steps at each interval.
 
+The below table compares the original data with the imputed data for each day.
 
+**Table of Total Steps Per Day, Original Data vs Imputed Data**
+```{r table4, echo=TRUE, results='asis'}
+#List table showing differences in total steps per day, original data vs imputed data
+tableofresults3 <- cbind(steps_sum, totalsteps_imputed=steps_sum_imputed$totalsteps)
+print(xtable(tableofresults3), "html")
+```
 
-## Are there differences in activity patterns between weekdays and weekends?
+##Are there differences in activity patterns between weekdays and weekends?
+
+The below code prepares the data using the lubridate package. It does NOT use the weekdays() function. Note, the imputed dataset, "repdat_imputed", is used.
+The code proceed to create a new factor variable in that dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+```{r chunk8, echo=TRUE, message=FALSE}
+library(lubridate)
+repdat_imputed$date <- ymd(repdat_imputed$date)
+repdat_imputed$isweekend <- (wday(repdat_imputed$date)%in%c(1,7))*1
+repdat_imputed$isweekend <- factor(repdat_imputed$isweekend,labels=c("weekday","weekend"))
+```
+
+###Panel Plot of Steps in Time Series, Weekdays vs Weekends 
+
+The following code groups the data by interval and the type of day (weekend or weekday). It then summarises that data to the total steps taken, using dplyr's summarise function.
+
+```{r chunk9, echo=TRUE}
+#Prepare data
+repdat_byintval_imputed <- group_by(repdat_imputed, interval, isweekend)
+repdat_byintval_imputed_smry <- summarise(repdat_byintval_imputed, totalsteps=sum(steps))
+
+#Simplify names for easy use in the plot
+x<-repdat_byintval_imputed_smry$interval
+y<-repdat_byintval_imputed_smry$totalsteps
+f<-repdat_byintval_imputed_smry$isweekend
+```
+
+Finally, the lattics package is used to create a panel plot containing a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+
+From the chart it is concluded that weekends are far less active than weekdays.
+
+**Time Series Plot: intervals vs steps taken; weekends and weekdays**
+```{r plot4, echo=TRUE, message=FALSE}
+library(lattice)
+xyplot(y ~ x | f, panel = function(x, y, ...) {
+    panel.lines(x, y, ...)
+})
+
+```
